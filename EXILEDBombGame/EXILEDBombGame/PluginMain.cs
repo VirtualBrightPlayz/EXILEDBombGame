@@ -22,20 +22,24 @@ namespace EXILEDBombGame
             base.OnEnabled();
             PLEV = new PluginEvents(this);
             Exiled.Events.Handlers.Server.RoundStarted += PLEV.RoundStart;
+            Exiled.Events.Handlers.Server.WaitingForPlayers += PLEV.Waiting;
             Exiled.Events.Handlers.Player.DroppingItem += PLEV.PlayerDropItem;
             Exiled.Events.Handlers.Player.Died += PLEV.PlayerDied;
             Exiled.Events.Handlers.Player.PickingUpItem += PLEV.PlayerPickupItem;
             Exiled.Events.Handlers.Player.InteractingDoor += PLEV.PlayerDoorInteract;
+            Exiled.Events.Handlers.Server.RespawningTeam += PLEV.RespawnTeam;
         }
 
         public override void OnDisabled()
         {
             base.OnDisabled();
             Exiled.Events.Handlers.Server.RoundStarted -= PLEV.RoundStart;
+            Exiled.Events.Handlers.Server.WaitingForPlayers -= PLEV.Waiting;
             Exiled.Events.Handlers.Player.DroppingItem -= PLEV.PlayerDropItem;
             Exiled.Events.Handlers.Player.Died -= PLEV.PlayerDied;
             Exiled.Events.Handlers.Player.PickingUpItem -= PLEV.PlayerPickupItem;
             Exiled.Events.Handlers.Player.InteractingDoor -= PLEV.PlayerDoorInteract;
+            Exiled.Events.Handlers.Server.RespawningTeam -= PLEV.RespawnTeam;
             PLEV = null;
         }
     }

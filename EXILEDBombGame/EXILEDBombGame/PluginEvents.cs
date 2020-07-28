@@ -31,16 +31,30 @@ namespace EXILEDBombGame
 
         public void RoundStart()
         {
-            bombPlanted = false;
-            CI = 0;
-            NTF = 0;
-            bombSpawned = false;
-            SetupItems();
-            SetupBombSites();
-            SetupPlayers();
-            timeLeft = plugin.Config.RoundTime;
-            Timing.KillCoroutines(PluginMain.roundTimerHandle);
-            PluginMain.roundTimerHandle = Timing.RunCoroutine(RoundTimer());
+            Timing.CallDelayed(1f, () =>
+            {
+                bombPlanted = false;
+                CI = 0;
+                NTF = 0;
+                bombSpawned = false;
+                SetupItems();
+                SetupBombSites();
+                SetupPlayers();
+                timeLeft = plugin.Config.RoundTime;
+                Timing.KillCoroutines(PluginMain.roundTimerHandle);
+                Timing.KillCoroutines(plantHandle);
+                PluginMain.roundTimerHandle = Timing.RunCoroutine(RoundTimer());
+            });
+            
+        }
+
+        public void Waiting()
+        {
+            Timing.CallDelayed(1f, () =>
+            {
+                Timing.KillCoroutines(PluginMain.roundTimerHandle);
+                Timing.KillCoroutines(plantHandle);
+            });
         }
 
         private void SetupItems()
@@ -50,6 +64,12 @@ namespace EXILEDBombGame
             {
                 item.Delete();
             }
+        }
+
+        public void RespawnTeam(RespawningTeamEventArgs ev)
+        {
+            ev.Players.Clear();
+            ev.MaximumRespawnAmount = 0;
         }
 
         private void SetupPlayers()
@@ -75,6 +95,7 @@ namespace EXILEDBombGame
             player.SetRole(RoleType.NtfLieutenant, true);
             player.Position = spawn.Transform.position + Vector3.up * 1.5f;
             player.ClearInventory();
+            player.Broadcast(10, plugin.Config.NTFSpawnText);
             foreach (var item in plugin.Config.NTFItems)
             {
                 player.AddItem(item);
@@ -83,9 +104,10 @@ namespace EXILEDBombGame
 
         private void SpawnAsCI(Player player, Room spawn)
         {
-            player.SetRole(RoleType.NtfLieutenant, true);
+            player.SetRole(RoleType.ChaosInsurgency, true);
             player.Position = spawn.Transform.position + Vector3.up * 1.5f;
             player.ClearInventory();
+            player.Broadcast(10, plugin.Config.CISpawnText);
             if (!bombSpawned)
             {
                 bombSpawned = true;
@@ -108,18 +130,38 @@ namespace EXILEDBombGame
             NTF = Player.List.Where(p => p.Role == RoleType.NtfLieutenant).Count();
             while (true)
             {
-                DisplayHintAll(FormatInfo(), 1f, HintEffectPresets.FadeInAndOut(0.5f));
+                DisplayHintAll(FormatInfo(), 1f, null);
                 yield return Timing.WaitForSeconds(1f);
                 timeLeft -= 1f;
+                if (bombPlanted)
+                {
+                    bombTimer -= 1f;
+                    if (bombTimer <= 0f)
+                    {
+                        foreach (var plr in Player.List)
+                        {
+                            if (plr.Role != RoleType.ChaosInsurgency)
+                            {
+                                plr.Kill();
+                            }
+                        }
+                        AlphaWarheadController.Host.Detonate();
+                        Map.Broadcast(10, plugin.Config.BombExplodeText);
+                        break;
+                    }
+                }
                 if (timeLeft <= 0f)
                 {
+                    foreach (var plr in Player.List)
+                    {
+                        plr.Kill();
+                    }
+                    Map.Broadcast(10, plugin.Config.RoundDrawText);
                     break;
                 }
                 CI = Player.List.Where(p => p.Role == RoleType.ChaosInsurgency).Count();
                 NTF = Player.List.Where(p => p.Role == RoleType.NtfLieutenant).Count();
             }
-            Round.IsLocked = false;
-            Round.Restart();
         }
 
         public string FormatInfo()
@@ -129,7 +171,7 @@ namespace EXILEDBombGame
 
         public void PlayerDoorInteract(InteractingDoorEventArgs ev)
         {
-            if (ev.Door.CheckpointDoor && ev.Door.DoorName.Contains("EZ"))
+            if (ev.Door.CheckpointDoor && ev.Door.DoorName.Contains("ENT"))
             {
                 ev.IsAllowed = false;
                 return;
@@ -139,12 +181,15 @@ namespace EXILEDBombGame
 
         public void PlayerPickupItem(PickingUpItemEventArgs ev)
         {
-            if (ev.Pickup == bomb)
+            if (ev.Pickup == bomb || ev.Pickup.info.itemId == ItemType.Coin)
             {
-                ev.IsAllowed = false;
-                if (!plantHandle.IsValid && !plantHandle.IsRunning)
+                if (bombPlanted)
                 {
-                    plantHandle = Timing.RunCoroutine(DiffuseBomb(ev.Player));
+                    ev.IsAllowed = false;
+                    if (!plantHandle.IsValid && !plantHandle.IsRunning)
+                    {
+                        plantHandle = Timing.RunCoroutine(DiffuseBomb(ev.Player));
+                    }
                 }
             }
         }
@@ -158,7 +203,7 @@ namespace EXILEDBombGame
                 yield return Timing.WaitForSeconds(plugin.Config.DiffuseTime);
                 if (player.Role == RoleType.NtfLieutenant)
                 {
-                    Map.Broadcast(5, plugin.Config.BombPlantText);
+                    Map.Broadcast(5, plugin.Config.BombDiffuseText);
                     player.ReferenceHub.playerEffectsController.ChangeEffectIntensity<Ensnared>(0);
                     foreach (var plr in Player.List)
                     {
@@ -169,6 +214,8 @@ namespace EXILEDBombGame
                     }
                 }
             }
+            Timing.KillCoroutines(plantHandle);
+            plantHandle = new CoroutineHandle();
         }
 
         public string FormatBombInfo()
@@ -182,10 +229,13 @@ namespace EXILEDBombGame
         {
             if (ev.Item.id == ItemType.Coin)
             {
-                ev.IsAllowed = false;
-                if (!plantHandle.IsValid && !plantHandle.IsRunning)
+                if (Vector3.Distance(ev.Player.Position, bombsite.Transform.position) <= plugin.Config.DistanceFromSite)
                 {
-                    plantHandle = Timing.RunCoroutine(PlantBomb(ev.Player));
+                    ev.IsAllowed = false;
+                    if (!plantHandle.IsValid && !plantHandle.IsRunning)
+                    {
+                        plantHandle = Timing.RunCoroutine(PlantBomb(ev.Player));
+                    }
                 }
             }
         }
@@ -198,6 +248,8 @@ namespace EXILEDBombGame
         {
             if (Vector3.Distance(player.Position, bombsite.Transform.position) > plugin.Config.DistanceFromSite)
             {
+                Timing.KillCoroutines(plantHandle);
+                plantHandle = new CoroutineHandle();
                 yield break;
             }
             player.ReferenceHub.playerEffectsController.ChangeEffectIntensity<Ensnared>(1);
@@ -207,8 +259,13 @@ namespace EXILEDBombGame
                 player.ReferenceHub.playerEffectsController.ChangeEffectIntensity<Ensnared>(0);
                 player.Inventory.items.RemoveAt(player.Inventory.items.FindIndex(p => p.id == ItemType.Coin));
                 Map.Broadcast(5, plugin.Config.BombPlantText);
-                bomb = ItemType.Coin.Spawn(0f, bombsite.Transform.position + Vector3.up * 1.5f);
+                bomb = ItemType.Coin.Spawn(0f, player.Position + Vector3.up * 1.5f);
+                bombTimer = plugin.Config.BombTimer;
+                timeLeft += bombTimer;
+                bombPlanted = true;
             }
+            Timing.KillCoroutines(plantHandle);
+            plantHandle = new CoroutineHandle();
         }
 
         public static void DisplayHintAll(string hint, float time, HintEffect[] effects)
@@ -217,7 +274,7 @@ namespace EXILEDBombGame
             {
                 player.ReferenceHub.hints.Show(new TextHint(hint, new HintParameter[]
                 {
-                    new StringHintParameter()
+                    new StringHintParameter("")
                 }, effects, time));
             }
         }
