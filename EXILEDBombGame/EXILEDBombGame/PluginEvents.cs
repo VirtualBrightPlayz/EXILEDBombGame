@@ -4,9 +4,13 @@ using Exiled.API.Features;
 using Exiled.Events.EventArgs;
 using Hints;
 using MEC;
+using Mirror;
+using PlayableScps.Messages;
+using RemoteAdmin;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Targeting;
 using UnityEngine;
 
 namespace EXILEDBombGame
@@ -32,6 +36,7 @@ namespace EXILEDBombGame
         public List<Player> CIList;
         public List<string> CIPlayers = new List<string>();
         public List<string> NTFPlayers = new List<string>();
+        public ReferenceHub bombdummy;
 
         public PluginEvents(PluginMain main)
         {
@@ -297,6 +302,23 @@ namespace EXILEDBombGame
                 }
                 offset++;
             }
+            /*try
+            {
+                foreach (var room in bombsite)
+                {
+                    var dum = SpawnDummyModel(room.Transform.position + Vector3.up * 5f, Quaternion.identity, RoleType.Tutorial, 1f, 1f, 1f);
+                    foreach (var player in Player.List)
+                    {
+                        NetworkServer.SendToAll<Scp096TriggerMessage>(new Scp096TriggerMessage(player.ReferenceHub, dum)
+                        {
+                        }, 0);
+                    }
+                }
+            }
+            catch (Exception e)
+            {
+                Log.Error(e);
+            }*/
         }
 
         private void SpawnAsNTF(Player player, Room spawn)
@@ -307,6 +329,8 @@ namespace EXILEDBombGame
                 NTFPlayers.Add(player.UserId);
             }
             player.SetRole(plugin.Config.NTFRole, true);
+            player.Health = plugin.Config.PlayerMaxHP;
+            player.MaxHealth = plugin.Config.PlayerMaxHP;
             player.Position = spawn.Transform.position + Vector3.up * 1.5f;
             player.ClearInventory();
             player.Broadcast(10, plugin.Config.NTFSpawnText);
@@ -327,6 +351,8 @@ namespace EXILEDBombGame
                 CIPlayers.Add(player.UserId);
             }
             player.SetRole(plugin.Config.CIRole, true);
+            player.Health = plugin.Config.PlayerMaxHP;
+            player.MaxHealth = plugin.Config.PlayerMaxHP;
             player.Position = spawn.Transform.position + Vector3.up * 1.5f;
             player.ClearInventory();
             player.Broadcast(10, plugin.Config.CISpawnText);
@@ -368,6 +394,11 @@ namespace EXILEDBombGame
                 }
                 CI = Player.List.Where(p => p.Role == plugin.Config.CIRole).Count();
                 NTF = Player.List.Where(p => p.Role == plugin.Config.NTFRole).Count();
+                /*if (bomb != null && bombPlanted)
+                {
+                    PlayerManager.localPlayer.GetComponent<CharacterClassManager>().CurClass = RoleType.Tutorial;
+                    PlayerManager.localPlayer.GetComponent<FallDamage>().RpcDoSound(bomb.position, 999f);
+                }*/
             }
         }
 
@@ -410,6 +441,10 @@ namespace EXILEDBombGame
                         plantHandle = Timing.RunCoroutine(DiffuseBomb(ev.Player));
                     }
                 }
+                else if (ev.Player.Role == plugin.Config.NTFRole)
+                {
+                    ev.IsAllowed = false;
+                }
             }
         }
 
@@ -439,8 +474,29 @@ namespace EXILEDBombGame
         public string FormatBombInfo()
         {
             if (bombPlanted)
-                return "True" + plugin.Config.BombInfoText.Replace("%bombtimer%", bombTimer.ToString());
-            return "False";
+                return plugin.Config.BombInfoText.Replace("%bombtimer%", bombTimer.ToString());
+            return "";
+        }
+
+        public ReferenceHub SpawnDummyModel(Vector3 position, Quaternion rotation, RoleType role, float x, float y, float z)
+        {
+            GameObject obj =
+                UnityEngine.Object.Instantiate(
+                    NetworkManager.singleton.spawnPrefabs.FirstOrDefault(p => p.gameObject.name == "Player"));
+            CharacterClassManager ccm = obj.GetComponent<CharacterClassManager>();
+            if (ccm == null)
+                Log.Error("CCM is null, doufus. You need to do this the harder way.");
+            ccm.CurClass = role;
+            //ccm.RefreshPlyModel(role);
+            obj.GetComponent<NicknameSync>().Network_myNickSync = "Dummy";
+            obj.GetComponent<QueryProcessor>().PlayerId = 9999;
+            obj.GetComponent<QueryProcessor>().NetworkPlayerId = 9999;
+            ccm._hub.playerStats.Health = 100000f;
+            obj.transform.localScale = new Vector3(x, y, z);
+            obj.transform.position = position;
+            obj.transform.rotation = rotation;
+            NetworkServer.Spawn(obj);
+            return ccm._hub;
         }
 
         public Room GetClosestBombSite(Vector3 pos, float maxdist)
@@ -496,8 +552,10 @@ namespace EXILEDBombGame
                 player.ReferenceHub.playerEffectsController.ChangeEffectIntensity<Ensnared>(0);
                 bombTimer = plugin.Config.BombTimer;
                 player.Inventory.items.RemoveAt(player.Inventory.items.FindIndex(p => p.id == ItemType.KeycardChaosInsurgency));
-                bomb = Pickup.Inv.SetPickup(ItemType.KeycardChaosInsurgency, 0f, player.Position + Vector3.up * 1.5f, Quaternion.identity, 0, 0, 0);
+                bomb = Pickup.Inv.SetPickup(ItemType.KeycardChaosInsurgency, 0f, player.Position + Vector3.up * -1f, Quaternion.identity, 0, 0, 0);
+                bomb.GetComponent<Rigidbody>().isKinematic = true;
                 //bomb = ItemType.KeycardChaosInsurgency.Spawn(0f, player.Position + Vector3.up * 1.5f);
+                //bombdummy = SpawnDummyModel(bomb.position, bomb.rotation, RoleType.Scp096, 0.1f, 0.1f, 0.1f);
                 timeLeft += bombTimer;
                 bombPlanted = true;
                 Map.Broadcast(5, plugin.Config.BombPlantText);

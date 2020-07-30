@@ -12,6 +12,7 @@ namespace EXILEDBombGame
         public int RoundWinMoney { get; set; } = 500;
         public int RoundLoseMoney { get; set; } = 200;
         public int RoundsBeforeReset { get; set; } = 5;
+        public int PlayerMaxHP { get; set; } = 100;
         public float DiffuseTime { get; set; } = 10f;
         public float PlantTime { get; set; } = 3f;
         public float RoundTime { get; set; } = 300f;
@@ -24,7 +25,7 @@ namespace EXILEDBombGame
         public string RoundCIWin { get; set; } = "<color=red>CI win!</color>";
         public string RoundNTFWin { get; set; } = "<color=red>NTF win!</color>";
         public string BombDiffuseText { get; set; } = "<color=red>Bomb has been diffused!</color>";
-        public string RoundInfoText { get; set; } = "Time until round end: %roundtimer%\n<color=blue>NTF: %ntf%</color> | <color=green>CI: %ci%</color>\nBomb planted: %bombplanted%";
+        public string RoundInfoText { get; set; } = "Time until round end: %roundtimer%\n<color=blue>NTF: %ntf%</color> | <color=green>CI: %ci%</color>\n%bombplanted%";
         public string BombInfoText { get; set; } = "\n<color=red>Time until detonation: %bombtimer%</color>";
         public string CISpawn { get; set; } = "HCZ_457";
         public string CISpawnText { get; set; } = "Plant the bomb (CI Keycard) at the Micro HID Room or Server Room!";
