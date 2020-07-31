@@ -2,6 +2,7 @@
 using Exiled.API.Extensions;
 using Exiled.API.Features;
 using Exiled.Events.EventArgs;
+using GameCore;
 using Hints;
 using MEC;
 using Mirror;
@@ -45,11 +46,13 @@ namespace EXILEDBombGame
 
         public void RoundStart()
         {
+            PluginMain.roundConfig = plugin.Config.RoundConfigs[UnityEngine.Random.Range(0, plugin.Config.RoundConfigs.Count)];
             plugin.canBuy = true;
             PluginMain.roundCount++;
             if (PluginMain.roundCount > plugin.Config.RoundsBeforeReset)
             {
                 PluginMain.money = new Dictionary<string, int>();
+                PluginMain.items = new Dictionary<string, List<Inventory.SyncItemInfo>>();
                 PluginMain.roundCount = 0;
                 CIPlayers = new List<string>();
                 NTFPlayers = new List<string>();
@@ -67,7 +70,8 @@ namespace EXILEDBombGame
                 roundStarted = false;
                 SetupItems();
                 SetupBombSites();
-                SetupPlayers();
+                if (!BalanceTeams())
+                    SetupPlayers();
                 timeLeft = plugin.Config.RoundTime;
                 plugin.canBuy = true;
                 Timing.KillCoroutines(PluginMain.roundTimerHandle);
@@ -84,6 +88,58 @@ namespace EXILEDBombGame
                 });
             });
 
+        }
+
+        public bool BalanceTeams()
+        {
+            Room cispawn = Map.Rooms.First(p => p.Name.Contains(PluginMain.roundConfig.CISpawn));
+            Room ntfspawn = Map.Rooms.First(p => p.Name.Contains(PluginMain.roundConfig.NTFSpawn));
+            List<Player> ci = new List<Player>();
+            List<Player> ntf = new List<Player>();
+            List<Player> none = new List<Player>();
+            foreach (Player plr in Player.List)
+            {
+                if (NTFPlayers.Contains(plr.UserId))
+                {
+                    ntf.Add(plr);
+                }
+                else if (CIPlayers.Contains(plr.UserId))
+                {
+                    ci.Add(plr);
+                }
+                else
+                {
+                    none.Add(plr);
+                }
+            }
+            if (Math.Abs(ci.Count - ntf.Count) >= plugin.Config.ResetTeamsWhenDiff)
+            {
+                CIPlayers.Clear();
+                NTFPlayers.Clear();
+                return false;
+            }
+            else if (Math.Abs(ci.Count - ntf.Count) > plugin.Config.MaxTeamDiff)
+            {
+                int idx = 0;
+                if (ci.Count > ntf.Count)
+                    idx++;
+                none = Shuffle<Player>(none).ToList();
+                foreach (Player newplr in none)
+                {
+                    if (idx % 2 == 0)
+                    {
+                        SpawnAsCI(newplr, cispawn);
+                    }
+                    else
+                    {
+                        SpawnAsNTF(newplr, ntfspawn);
+                    }
+                    idx++;
+                }
+                return true;
+            }
+            else
+                return false;
         }
 
         public void PlayerRoleChange(ChangingRoleEventArgs ev)
@@ -112,6 +168,46 @@ namespace EXILEDBombGame
             }
         }
 
+        public bool LoadInventory(Player plr)
+        {
+            if (!PluginMain.items.ContainsKey(plr.UserId))
+                return false;
+            List<Inventory.SyncItemInfo> items = PluginMain.items[plr.UserId];
+            if (items.Count == 0)
+                return false;
+            foreach (var item in items)
+            {
+                var newitem = new Inventory.SyncItemInfo();
+                newitem.id = item.id;
+                newitem.modSight = item.modSight;
+                newitem.modBarrel = item.modBarrel;
+                newitem.modOther = item.modOther;
+                newitem.durability = Pickup.Inv.GetItemByID(item.id).durability;
+                plr.AddItem(newitem);
+            }
+            return true;
+        }
+
+        public IEnumerator<float> SaveInventory()
+        {
+            int timeToRoundRestart = Mathf.Clamp(ConfigFile.ServerConfig.GetInt("auto_round_restart_time", 10), 5, 1000);
+            yield return Timing.WaitForSeconds(timeToRoundRestart - 1f);
+            PluginMain.items.Clear();
+            foreach (var plr in Player.List)
+            {
+                List<Inventory.SyncItemInfo> items = new List<Inventory.SyncItemInfo>();
+                foreach (var item in plr.Inventory.items)
+                {
+                    if (item.id == ItemType.KeycardChaosInsurgency)
+                    {
+                        continue;
+                    }
+                    items.Add(item);
+                }
+                PluginMain.items.Add(plr.UserId, items);
+            }
+        }
+
         public void EndRoundCheck(EndingRoundEventArgs ev)
         {
             if (plugin.canBuy)
@@ -124,19 +220,20 @@ namespace EXILEDBombGame
             NTF = Player.List.Where(p => p.Role == plugin.Config.NTFRole).Count();
             if (NTF == 0)
             {
-                foreach (var plr in Player.List)
+                /*foreach (var plr in Player.List)
                 {
                     if (plr.Role != plugin.Config.CIRole)
                     {
                         plr.Kill();
                     }
-                }
+                }*/
                 Map.Broadcast(10, plugin.Config.RoundCIWin);
                 ev.IsAllowed = true;
                 ev.IsRoundEnded = true;
                 ev.LeadingTeam = RoundSummary.LeadingTeam.ChaosInsurgency;
                 AddMoney(plugin.Config.RoundWinMoney, CIList);
                 AddMoney(plugin.Config.RoundLoseMoney, NTFList);
+                Timing.RunCoroutine(SaveInventory());
             }
             else if (CI == 0 && bombPlanted && bombTimer > 0f)
             {
@@ -145,65 +242,75 @@ namespace EXILEDBombGame
             }
             else if (CI == 0 && !bombPlanted)
             {
-                foreach (var plr in Player.List)
+                /*foreach (var plr in Player.List)
                 {
                     if (plr.Role != plugin.Config.NTFRole)
                     {
                         plr.Kill();
                     }
-                }
+                }*/
                 Map.Broadcast(5, plugin.Config.RoundNTFWin);
                 ev.IsAllowed = true;
                 ev.IsRoundEnded = true;
                 ev.LeadingTeam = RoundSummary.LeadingTeam.FacilityForces;
                 AddMoney(plugin.Config.RoundWinMoney, NTFList);
                 AddMoney(plugin.Config.RoundLoseMoney, CIList);
+                Timing.RunCoroutine(SaveInventory());
             }
             else if (timeLeft <= 0f)
             {
-                foreach (var plr in Player.List)
+                /*foreach (var plr in Player.List)
                 {
                     plr.Kill();
-                }
+                }*/
                 Map.Broadcast(10, plugin.Config.RoundNTFWin);
                 ev.IsAllowed = true;
                 ev.IsRoundEnded = true;
                 ev.LeadingTeam = RoundSummary.LeadingTeam.FacilityForces;
                 AddMoney(plugin.Config.RoundWinMoney, NTFList);
                 AddMoney(plugin.Config.RoundLoseMoney, CIList);
+                Timing.RunCoroutine(SaveInventory());
             }
             else if (bombTimer <= 0f && bombPlanted)
             {
-                foreach (var plr in Player.List)
+                try
                 {
-                    if (plr.Role != plugin.Config.CIRole)
+                    foreach (var plr in Player.List)
                     {
-                        plr.Kill();
+                        if (Vector3.Distance(plr.Position, bomb.Networkposition) <= plugin.Config.BombExplodeDistance)
+                        {
+                            plr.Kill();
+                        }
                     }
                 }
-                AlphaWarheadController.Host.Detonate();
+                catch (Exception e)
+                {
+                    Exiled.API.Features.Log.Error(e);
+                }
                 Map.Broadcast(10, plugin.Config.BombExplodeText);
                 ev.IsAllowed = true;
                 ev.IsRoundEnded = true;
                 ev.LeadingTeam = RoundSummary.LeadingTeam.ChaosInsurgency;
                 AddMoney(plugin.Config.RoundWinMoney, CIList);
                 AddMoney(plugin.Config.RoundLoseMoney, NTFList);
+                Timing.RunCoroutine(SaveInventory());
             }
             else if (bombDiffused)
             {
-                foreach (var plr in Player.List)
+                /*foreach (var plr in Player.List)
                 {
                     if (plr.Role != plugin.Config.NTFRole)
                     {
                         plr.Kill();
                     }
-                }
+                }*/
                 Map.Broadcast(5, plugin.Config.BombDiffuseText);
                 ev.IsAllowed = true;
                 ev.IsRoundEnded = true;
                 ev.LeadingTeam = RoundSummary.LeadingTeam.FacilityForces;
                 AddMoney(plugin.Config.RoundWinMoney, NTFList);
                 AddMoney(plugin.Config.RoundLoseMoney, CIList);
+                Timing.RunCoroutine(SaveInventory());
             }
             else
             {
@@ -266,8 +373,8 @@ namespace EXILEDBombGame
 
         private void SetupPlayers()
         {
-            Room cispawn = Map.Rooms.First(p => p.Name.Contains(plugin.Config.CISpawn));
-            Room ntfspawn = Map.Rooms.First(p => p.Name.Contains(plugin.Config.NTFSpawn));
+            Room cispawn = Map.Rooms.First(p => p.Name.Contains(PluginMain.roundConfig.CISpawn));
+            Room ntfspawn = Map.Rooms.First(p => p.Name.Contains(PluginMain.roundConfig.NTFSpawn));
             CIList = new List<Player>();
             NTFList = new List<Player>();
             var lst = Player.List.ToList();
@@ -275,10 +382,6 @@ namespace EXILEDBombGame
             //lst.RemoveAll(p => NTFPlayers.Contains(p.UserId));
             lst = Shuffle<Player>(lst).ToList();
             int offset = 0;
-            if (CIPlayers.Count <= NTFPlayers.Count)
-            {
-                offset++;
-            }
             for (int i = 0; i < lst.Count(); i++)
             {
                 Player plr = lst[i];
@@ -333,10 +436,13 @@ namespace EXILEDBombGame
             player.MaxHealth = plugin.Config.PlayerMaxHP;
             player.Position = spawn.Transform.position + Vector3.up * 1.5f;
             player.ClearInventory();
-            player.Broadcast(10, plugin.Config.NTFSpawnText);
-            foreach (var item in plugin.Config.NTFItems)
+            player.Broadcast(10, PluginMain.roundConfig.NTFSpawnText);
+            if (!LoadInventory(player))
             {
-                player.AddItem(item);
+                foreach (var item in PluginMain.roundConfig.NTFItems)
+                {
+                    player.AddItem(item);
+                }
             }
             player.SetAmmo(Exiled.API.Enums.AmmoType.Nato556, 500);
             player.SetAmmo(Exiled.API.Enums.AmmoType.Nato762, 500);
@@ -355,15 +461,18 @@ namespace EXILEDBombGame
             player.MaxHealth = plugin.Config.PlayerMaxHP;
             player.Position = spawn.Transform.position + Vector3.up * 1.5f;
             player.ClearInventory();
-            player.Broadcast(10, plugin.Config.CISpawnText);
+            player.Broadcast(10, PluginMain.roundConfig.CISpawnText);
             if (!bombSpawned)
             {
                 bombSpawned = true;
                 player.AddItem(ItemType.KeycardChaosInsurgency);
             }
-            foreach (var item in plugin.Config.CIItems)
+            if (!LoadInventory(player))
             {
-                player.AddItem(item);
+                foreach (var item in PluginMain.roundConfig.CIItems)
+                {
+                    player.AddItem(item);
+                }
             }
             player.SetAmmo(Exiled.API.Enums.AmmoType.Nato556, 500);
             player.SetAmmo(Exiled.API.Enums.AmmoType.Nato762, 500);
@@ -373,7 +482,7 @@ namespace EXILEDBombGame
         private void SetupBombSites()
         {
             bombsite = new List<Room>();
-            foreach (var site in plugin.Config.BombsiteSpawn)
+            foreach (var site in PluginMain.roundConfig.BombsiteSpawn)
             {
                 bombsite.Add(Map.Rooms.First(p => p.Name.Contains(site)));
             }
@@ -485,7 +594,7 @@ namespace EXILEDBombGame
                     NetworkManager.singleton.spawnPrefabs.FirstOrDefault(p => p.gameObject.name == "Player"));
             CharacterClassManager ccm = obj.GetComponent<CharacterClassManager>();
             if (ccm == null)
-                Log.Error("CCM is null, doufus. You need to do this the harder way.");
+                Exiled.API.Features.Log.Error("CCM is null, doufus. You need to do this the harder way.");
             ccm.CurClass = role;
             //ccm.RefreshPlyModel(role);
             obj.GetComponent<NicknameSync>().Network_myNickSync = "Dummy";

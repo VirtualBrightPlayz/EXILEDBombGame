@@ -21,6 +21,8 @@ namespace EXILEDBombGame
 
         public bool canBuy = false;
         public static Dictionary<string, int> money = new Dictionary<string, int>();
+        public static Dictionary<string, List<Inventory.SyncItemInfo>> items = new Dictionary<string, List<Inventory.SyncItemInfo>>();
+        public static RoundConfig roundConfig;
         public static int roundCount = 0;
 
         public override void OnEnabled()

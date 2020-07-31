@@ -13,11 +13,14 @@ namespace EXILEDBombGame
         public int RoundLoseMoney { get; set; } = 200;
         public int RoundsBeforeReset { get; set; } = 5;
         public int PlayerMaxHP { get; set; } = 100;
+        public int MaxTeamDiff { get; set; } = 1;
+        public int ResetTeamsWhenDiff { get; set; } = 3;
         public float DiffuseTime { get; set; } = 10f;
         public float PlantTime { get; set; } = 3f;
         public float RoundTime { get; set; } = 300f;
         public float DistanceFromSite { get; set; } = 10f;
         public float BombTimer { get; set; } = 50f;
+        public float BombExplodeDistance { get; set; } = 15f;
         public float BuyTimer { get; set; } = 20f;
         public string BombPlantText { get; set; } = "<color=red>Bomb has been planted!</color>";
         public string BombExplodeText { get; set; } = "<color=red>Bomb has been detonated!</color>";
@@ -27,30 +30,10 @@ namespace EXILEDBombGame
         public string BombDiffuseText { get; set; } = "<color=red>Bomb has been diffused!</color>";
         public string RoundInfoText { get; set; } = "Time until round end: %roundtimer%\n<color=blue>NTF: %ntf%</color> | <color=green>CI: %ci%</color>\n%bombplanted%";
         public string BombInfoText { get; set; } = "\n<color=red>Time until detonation: %bombtimer%</color>";
-        public string CISpawn { get; set; } = "HCZ_457";
-        public string CISpawnText { get; set; } = "Plant the bomb (CI Keycard) at the Micro HID Room or Server Room!";
-        public string NTFSpawnText { get; set; } = "Defend the bomb site at the Micro HID Room or Server Room!";
-        public string NTFSpawn { get; set; } = "HCZ_079";
-        public List<string> BombsiteSpawn { get; set; } = new List<string>()
-        {
-            "HCZ_Hid",
-            "HCZ_Server",
-        };
         public string BuyTimeExpireText { get; set; } = "Buy time expired.";
         public string BuyTimeTitleText { get; set; } = "Your money: %money%\nShop:\n";
         public string BuyTimeCompleteText { get; set; } = "Purchase complete.";
         public string BuyTimeFailText { get; set; } = "Not enough Money.";
-        public List<ItemType> CIItems { get; set; } = new List<ItemType>()
-        {
-            ItemType.GunCOM15,
-            ItemType.Medkit,
-        };
-        public List<ItemType> NTFItems { get; set; } = new List<ItemType>()
-        {
-            ItemType.GunCOM15,
-            ItemType.Medkit,
-        };
-
         public RoleType CIRole { get; set; } = RoleType.ChaosInsurgency;
         public RoleType NTFRole { get; set; } = RoleType.NtfLieutenant;
 
@@ -126,6 +109,10 @@ namespace EXILEDBombGame
                 DisplayName = "SCP-018",
             },
         };
+        public List<RoundConfig> RoundConfigs { get; set; } = new List<RoundConfig>()
+        {
+            new RoundConfig(),
+        };
     }
 
     public class ShopItem
@@ -136,5 +123,28 @@ namespace EXILEDBombGame
         public int Sight { get; set; } = -1;
         public int Barrel { get; set; } = -1;
         public int Other { get; set; } = -1;
+    }
+
+    public class RoundConfig
+    {
+        public string CISpawnText { get; set; } = "Plant the bomb (CI Keycard) at the Micro HID Room or Server Room!";
+        public string NTFSpawnText { get; set; } = "Defend the bomb site at the Micro HID Room or Server Room!";
+        public string NTFSpawn { get; set; } = "HCZ_079";
+        public string CISpawn { get; set; } = "HCZ_457";
+        public List<string> BombsiteSpawn { get; set; } = new List<string>()
+        {
+            "HCZ_Hid",
+            "HCZ_Server",
+        };
+        public List<ItemType> CIItems { get; set; } = new List<ItemType>()
+        {
+            ItemType.GunCOM15,
+            ItemType.Medkit,
+        };
+        public List<ItemType> NTFItems { get; set; } = new List<ItemType>()
+        {
+            ItemType.GunCOM15,
+            ItemType.Medkit,
+        };
     }
 }
